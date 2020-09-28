@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/gogo/protobuf/proto"
 	"github.com/jaegertracing/jaeger/model"
-	"github.com/jaegertracing/jaeger/storage/dependencystore"
 	"github.com/jaegertracing/jaeger/storage/spanstore"
 	"io/ioutil"
 	"net/url"
@@ -16,68 +15,37 @@ import (
 
 var directories = []string{"operations", "traces", "services"}
 
-const numberReadWorkers = 100
-const numberWriteWorkers = 100
-const numberWriteBuffer = 1
-
-type FileSystem struct {
-	basePath      string
+type Store struct {
+	config        Config
 	readSemaphore chan struct{}
 	writeChannel  chan *model.Span
 }
 
-func NewFileSystem(cfg Config) *FileSystem {
-	basePath := cfg.DataDir
+func NewStorage(options Options) *Store {
+	cfg := options.Configuration
 	if cfg.Ephemeral {
-		basePath,_ = ioutil.TempDir("", "filesystem")
+		cfg.DataDir, _ = ioutil.TempDir("", "filesystem")
 	}
-	return &FileSystem{
-		basePath: basePath,
+	return &Store{
+		config: cfg,
 	}
 }
 
-func (fs *FileSystem) Init() {
+func (fs *Store) Init() {
 	for _, dir := range directories {
-		subPath := path.Join(fs.basePath, dir)
+		subPath := path.Join(fs.config.DataDir, dir)
 		if _, err := os.Stat(subPath); os.IsNotExist(err) {
 			_ = os.Mkdir(subPath, 0755)
 		}
 	}
-	fs.readSemaphore = make(chan struct{}, numberReadWorkers)
-	fs.writeChannel = make(chan *model.Span, numberWriteBuffer)
+	fs.readSemaphore = make(chan struct{}, fs.config.NumberReadWorkers)
+	fs.writeChannel = make(chan *model.Span, fs.config.WriteBufferSize)
 	fs.startWriteWorkers()
 
 }
 
-func (fs *FileSystem) SpanReader() spanstore.Reader {
-	return fs
-}
-
-func (fs *FileSystem) SpanWriter() spanstore.Writer {
-	return fs
-}
-
-func (fs *FileSystem) DependencyReader() dependencystore.Reader {
-	return fs
-}
-
-func (fs *FileSystem) getTraceConcurrent(wg *sync.WaitGroup, spans []*model.Span, index int, spanPath string) {
-	fs.readSemaphore <- struct{}{}
-	go func(index int, path string) {
-		msg, err := ioutil.ReadFile(path)
-		if err != nil {
-			panic(err)
-		}
-		s := &model.Span{}
-		_ = proto.Unmarshal(msg, s)
-		spans[index] = s
-		wg.Done()
-		<-fs.readSemaphore
-	}(index, spanPath)
-}
-
-func (fs *FileSystem) GetTrace(ctx context.Context, traceID model.TraceID) (*model.Trace, error) {
-	tracePath := path.Join(fs.basePath, "traces", traceID.String())
+func (fs *Store) GetTrace(ctx context.Context, traceID model.TraceID) (*model.Trace, error) {
+	tracePath := path.Join(fs.config.DataDir, "traces", traceID.String())
 	files, err := ioutil.ReadDir(tracePath)
 	if err != nil {
 		return nil, err
@@ -97,8 +65,8 @@ func (fs *FileSystem) GetTrace(ctx context.Context, traceID model.TraceID) (*mod
 	}, nil
 }
 
-func (fs *FileSystem) GetServices(ctx context.Context) ([]string, error) {
-	files, err := ioutil.ReadDir(path.Join(fs.basePath, "services"))
+func (fs *Store) GetServices(ctx context.Context) ([]string, error) {
+	files, err := ioutil.ReadDir(path.Join(fs.config.DataDir, "services"))
 	if err != nil {
 		return nil, err
 	}
@@ -110,8 +78,8 @@ func (fs *FileSystem) GetServices(ctx context.Context) ([]string, error) {
 	return services, nil
 }
 
-func (fs *FileSystem) GetOperations(ctx context.Context, query spanstore.OperationQueryParameters) ([]spanstore.Operation, error) {
-	files, err := ioutil.ReadDir(path.Join(fs.basePath, "operations"))
+func (fs *Store) GetOperations(ctx context.Context, query spanstore.OperationQueryParameters) ([]spanstore.Operation, error) {
+	files, err := ioutil.ReadDir(path.Join(fs.config.DataDir, "operations"))
 	if err != nil {
 		return nil, err
 	}
@@ -123,11 +91,11 @@ func (fs *FileSystem) GetOperations(ctx context.Context, query spanstore.Operati
 	return operations, nil
 }
 
-func (fs *FileSystem) FindTraces(ctx context.Context, query *spanstore.TraceQueryParameters) ([]*model.Trace, error) {
+func (fs *Store) FindTraces(ctx context.Context, query *spanstore.TraceQueryParameters) ([]*model.Trace, error) {
 
 	// Ignore query because we cannot do complex queries just with filesystem
 	// This will return all available traces and is just for demo purposes.
-	traceIds, err := ioutil.ReadDir(path.Join(fs.basePath, "traces"))
+	traceIds, err := ioutil.ReadDir(path.Join(fs.config.DataDir, "traces"))
 	if err != nil {
 		return nil, err
 	}
@@ -148,12 +116,38 @@ func (fs *FileSystem) FindTraces(ctx context.Context, query *spanstore.TraceQuer
 	return traces, nil
 }
 
-func (fs *FileSystem) FindTraceIDs(ctx context.Context, query *spanstore.TraceQueryParameters) ([]model.TraceID, error) {
+func (fs *Store) FindTraceIDs(ctx context.Context, query *spanstore.TraceQueryParameters) ([]model.TraceID, error) {
 	return nil, nil
 }
 
-func (fs *FileSystem) startWriteWorkers() {
-	for i := 0; i < numberWriteWorkers; i++ {
+func (fs *Store) GetDependencies(ctx context.Context, endTs time.Time, lookback time.Duration) ([]model.DependencyLink, error) {
+	return nil, nil
+}
+
+func (fs *Store) WriteSpan(context context.Context, span *model.Span) error {
+	_ = os.MkdirAll(path.Join(fs.config.DataDir, "traces", span.TraceID.String()), 0755)
+	// Send span to write pipeline so one of the workers can write it to the disk
+	fs.writeChannel <- span
+	return nil
+}
+
+func (fs *Store) getTraceConcurrent(wg *sync.WaitGroup, spans []*model.Span, index int, spanPath string) {
+	fs.readSemaphore <- struct{}{}
+	go func(index int, path string) {
+		msg, err := ioutil.ReadFile(path)
+		if err != nil {
+			panic(err)
+		}
+		s := &model.Span{}
+		_ = proto.Unmarshal(msg, s)
+		spans[index] = s
+		wg.Done()
+		<-fs.readSemaphore
+	}(index, spanPath)
+}
+
+func (fs *Store) startWriteWorkers() {
+	for i := 0; i < fs.config.NumberWriteWorkers; i++ {
 		go func() {
 			for span := range fs.writeChannel {
 				_ = fs.writeSingleSpan(span)
@@ -162,9 +156,9 @@ func (fs *FileSystem) startWriteWorkers() {
 	}
 }
 
-func (fs *FileSystem) writeSingleSpan(span *model.Span) error {
+func (fs *Store) writeSingleSpan(span *model.Span) error {
 	_ = fs.writeMetaData(span)
-	writePath := path.Join(fs.basePath, "traces", span.TraceID.String(), span.SpanID.String())
+	writePath := path.Join(fs.config.DataDir, "traces", span.TraceID.String(), span.SpanID.String())
 	bytes, _ := proto.Marshal(span)
 	err := ioutil.WriteFile(writePath, bytes, 0644)
 	if err != nil {
@@ -173,14 +167,7 @@ func (fs *FileSystem) writeSingleSpan(span *model.Span) error {
 	return nil
 }
 
-func (fs *FileSystem) WriteSpan(context context.Context, span *model.Span) error {
-	_ = os.MkdirAll(path.Join(fs.basePath, "traces", span.TraceID.String()), 0755)
-	// Send span to write pipeline so one of the workers can write it to the disk
-	fs.writeChannel <- span
-	return nil
-}
-
-func (fs *FileSystem) writeMetaData(span *model.Span) error {
+func (fs *Store) writeMetaData(span *model.Span) error {
 	err := fs.writeOperation(span.OperationName)
 	if err != nil {
 		return err
@@ -192,22 +179,18 @@ func (fs *FileSystem) writeMetaData(span *model.Span) error {
 	return nil
 }
 
-func (fs *FileSystem) writeOperation(operation string) error {
-	f, err := os.OpenFile(path.Join(fs.basePath, "operations", url.QueryEscape(operation)), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func (fs *Store) writeOperation(operation string) error {
+	f, err := os.OpenFile(path.Join(fs.config.DataDir, "operations", url.QueryEscape(operation)), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
 	return f.Close()
 }
 
-func (fs *FileSystem) writeService(serviceName string) error {
-	f, err := os.OpenFile(path.Join(fs.basePath, "services", url.QueryEscape(serviceName)), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func (fs *Store) writeService(serviceName string) error {
+	f, err := os.OpenFile(path.Join(fs.config.DataDir, "services", url.QueryEscape(serviceName)), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
 	return f.Close()
-}
-
-func (fs *FileSystem) GetDependencies(ctx context.Context, endTs time.Time, lookback time.Duration) ([]model.DependencyLink, error) {
-	return nil, nil
 }

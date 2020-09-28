@@ -25,18 +25,17 @@ func main() {
 	v := viper.New()
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
-
-	store := filesystem.NewFileSystem(filesystem.Config{})
-
+	options := filesystem.Options{}
+	options.InitFromViper(v)
+	store := filesystem.NewStorage(options)
 	store.Init()
-
 	grpc.Serve(&filesystemStorage{
 		store: store,
 	})
 }
 
 type filesystemStorage struct {
-	store *filesystem.FileSystem
+	store *filesystem.Store
 }
 
 func (ns *filesystemStorage) DependencyReader() dependencystore.Reader {

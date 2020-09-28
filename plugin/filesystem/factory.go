@@ -9,22 +9,9 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	pathFlag = "fsstorage.path"
-	ephemeralFlag = "fsstorage.Ephemeral"
-
-)
-
-// Config holds the configuration for redbull.
-type Config struct {
-	DataDir   string
-	Ephemeral bool
-}
-
-// Factory is the redbull factory that implements storage.Factory.
 type Factory struct {
-	cfg Config
-	*FileSystem
+	options Options
+	*Store
 }
 
 // NewFactory returns a new factory.
@@ -32,42 +19,37 @@ func NewFactory() *Factory {
 	return &Factory{}
 }
 
-// AddFlags implements plugin.Configurable.
 func (f *Factory) AddFlags(flagset *flag.FlagSet) {
-	flagset.String(pathFlag, ".", "Path to store traces information.")
-	flagset.Bool(ephemeralFlag, true, "Ephemeral store data on a temp file")
+	AddFlags(flagset)
 }
 
 // InitFromViper implements plugin.Configurable.
 func (f *Factory) InitFromViper(v *viper.Viper) {
-	f.cfg.DataDir = v.GetString(pathFlag)
-	f.cfg.Ephemeral = v.GetBool(ephemeralFlag)
+	f.options.InitFromViper(v)
 }
 
-func (f *Factory) InitFromConfig(c *Config) {
-	f.cfg.DataDir = c.DataDir
-	f.cfg.Ephemeral = c.Ephemeral
+func (f *Factory) InitFromConfig(c Config) {
+	f.options.Configuration = c
 }
-
 
 // Initialize implements storage.Factory.
 func (f *Factory) Initialize(metricsFactory metrics.Factory, zapLogger *zap.Logger) error {
-	f.FileSystem = NewFileSystem(f.cfg)
-	f.FileSystem.Init()
+	f.Store = NewStorage(f.options.Configuration)
+	f.Store.Init()
 	return nil
 }
 
 // CreateSpanReader implements storage.Factory.
 func (f *Factory) CreateSpanReader() (spanstore.Reader, error) {
-	return f.FileSystem.SpanReader(), nil
+	return f.Store, nil
 }
 
 // CreateSpanWriter implements storage.Factory.
 func (f *Factory) CreateSpanWriter() (spanstore.Writer, error) {
-	return f.FileSystem.SpanWriter(), nil
+	return f.Store, nil
 }
 
 // CreateDependencyReader implements storage.Factory.
 func (f *Factory) CreateDependencyReader() (dependencystore.Reader, error) {
-	return f.FileSystem.DependencyReader(), nil
+	return f.Store, nil
 }
