@@ -34,7 +34,7 @@ func (f *Factory) InitFromConfig(c Config) {
 
 // Initialize implements storage.Factory.
 func (f *Factory) Initialize(metricsFactory metrics.Factory, zapLogger *zap.Logger) error {
-	f.Store = NewStorage(f.options.Configuration)
+	f.Store = NewStorage(f.options)
 	f.Store.Init()
 	return nil
 }
