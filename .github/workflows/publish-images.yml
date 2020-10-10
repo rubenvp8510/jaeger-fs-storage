@@ -1,0 +1,24 @@
+name: "Docker with filesystem enabled"
+on: [push]
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v2
+        with:
+          go-version: "^1.14.x"
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+          repository: 'rubenvp8510/jaeger'
+          ref: 'fs-span-storage'
+      - name: "prepare build"
+        run: make install-tools
+      - name: "build and public images"
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          DOCKER_NAMESPACE: ${{ secrets.DOCKER_NAMESPACE }}
+          CONFIRM: "y"
+        run: ./.ci/publish-images.sh
