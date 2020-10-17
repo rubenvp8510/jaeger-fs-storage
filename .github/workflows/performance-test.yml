@@ -1,0 +1,36 @@
+name: "Performance tests"
+on: [push, pull_request]
+jobs:
+  performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v2
+        with:
+          go-version: "^1.14.x"
+      - uses: actions/checkout@v2
+        name: "checkout master"
+        with:
+          ref: 'master'
+          path: 'master'
+      - uses: actions/checkout@v2
+        name: "checkout branch"
+        with:
+          path: 'branch'
+      - name: "download fixtures"
+        run: ./master/.ci/download-fixtures.sh
+      - name: "download fixtures"
+        run: ls
+      - name: "run benchmark against master"
+        working-directory: 'master'
+        run: make perftest > benchmark.out
+        env:
+          FIXTURES_PATH: "../../data/traces"
+      - name: "run benchmark against branch"
+        working-directory: 'branch'
+        run: make perftest > benchmark.out
+        env:
+          FIXTURES_PATH: "../../data/traces"
+      - name: "install benchstat"
+        run: " go get golang.org/x/perf/cmd/benchstat"
+      - name: "compare master vs branch"
+        run: benchstat master/benchmark.out branch/benchmark.out
