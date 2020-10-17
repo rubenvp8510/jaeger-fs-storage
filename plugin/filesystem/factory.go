@@ -30,6 +30,13 @@ func (f *Factory) InitFromViper(v *viper.Viper) {
 
 func (f *Factory) InitFromConfig(c Config) {
 	f.options.Configuration = c
+	if f.options.Configuration.NumberReadWorkers == 0 {
+		f.options.Configuration.NumberReadWorkers = defaultNumberReadWorkers
+	}
+
+	if f.options.Configuration.NumberWriteWorkers== 0 {
+		f.options.Configuration.NumberWriteWorkers = defaultNumberWriteWorkers
+	}
 }
 
 // Initialize implements storage.Factory.
