@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"github.com/jaegertracing/jaeger/plugin/storage/grpc"
+	"github.com/jaegertracing/jaeger/plugin/storage/grpc/shared"
 	"github.com/jaegertracing/jaeger/storage/dependencystore"
 	"github.com/jaegertracing/jaeger/storage/spanstore"
 	"github.com/rubenvp8510/jaeger-fs-storage/plugin/filesystem"
@@ -29,13 +30,19 @@ func main() {
 	options.InitFromViper(v)
 	store := filesystem.NewStorage(options)
 	store.Init()
-	grpc.Serve(&filesystemStorage{
+	plugin := &filesystemStorage{
 		store: store,
+		archiveStore: store,
+	}
+	grpc.Serve(&shared.PluginServices{
+		Store:        plugin,
+		ArchiveStore: plugin,
 	})
 }
 
 type filesystemStorage struct {
 	store *filesystem.Store
+	archiveStore *filesystem.Store
 }
 
 func (ns *filesystemStorage) DependencyReader() dependencystore.Reader {
@@ -47,5 +54,13 @@ func (ns *filesystemStorage) SpanReader() spanstore.Reader {
 }
 
 func (ns *filesystemStorage) SpanWriter() spanstore.Writer {
+	return ns.store
+}
+
+func (ns *filesystemStorage) ArchiveSpanReader() spanstore.Reader {
+	return ns.store
+}
+
+func (ns *filesystemStorage) ArchiveSpanWriter() spanstore.Writer {
 	return ns.store
 }
