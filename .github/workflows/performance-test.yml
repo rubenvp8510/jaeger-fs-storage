@@ -16,6 +16,11 @@ jobs:
         name: "checkout branch"
         with:
           path: 'branch'
+      - name: Cache fixtures
+        uses: actions/cache@v2
+        with:
+          path: ./data
+          key: ${{ runner.os }}-${{ hashFiles('**/traces') }}
       - name: "download fixtures"
         run: ./master/.ci/download-fixtures.sh
       - name: "download fixtures"
