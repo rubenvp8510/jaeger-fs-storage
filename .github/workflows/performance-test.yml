@@ -20,11 +20,12 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ./data
-          key: ${{ runner.os }}-${{ hashFiles('**/traces') }}
+          key: traces-${{ hashFiles('**/traces') }}
+          restore-keys: |
+            traces-${{ hashFiles('**/traces') }}
+            traces-
       - name: "download fixtures"
         run: ./master/.ci/download-fixtures.sh
-      - name: "download fixtures"
-        run: ls
       - name: "run benchmark against master"
         working-directory: 'master'
         run: make perftest > benchmark.out
