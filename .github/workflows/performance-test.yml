@@ -39,4 +39,4 @@ jobs:
       - name: "install benchstat"
         run: " go get golang.org/x/perf/cmd/benchstat"
       - name: "compare master vs branch"
-        run: benchstat master/benchmark.out branch/benchmark.out
+        run: benchstat -alpha 1.0 master/benchmark.out branch/benchmark.out
