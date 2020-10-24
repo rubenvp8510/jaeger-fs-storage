@@ -28,15 +28,22 @@ jobs:
         run: ./master/.ci/download-fixtures.sh
       - name: "run benchmark against master"
         working-directory: 'master'
-        run: make perftest > benchmark.out
+        run: make perftest | tee benchmark.out
         env:
           FIXTURES_PATH: "../../data/traces"
       - name: "run benchmark against branch"
         working-directory: 'branch'
-        run: make perftest > benchmark.out
+        run: make perftest | tee benchmark.out
         env:
           FIXTURES_PATH: "../../data/traces"
       - name: "install benchstat"
         run: " go get golang.org/x/perf/cmd/benchstat"
       - name: "compare master vs branch"
-        run: benchstat -alpha 1.0 master/benchmark.out branch/benchmark.out
+        run: benchstat -alpha 1.0 -csv master/benchmark.out branch/benchmark.out | tee compare_results
+      - name: "regression verification"
+        uses: rubenvp8510/github-action-benchcompare@master
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          benchstat_file: 'compare_results'
+          delta_threshold: 50
+          metrics: 'time/op'
