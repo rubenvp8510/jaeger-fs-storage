@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.1.2 // indirect
 	github.com/jaegertracing/jaeger v1.20.0
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
-	github.com/rubenvp8510/jaeger-storage-perf v0.0.0-20201016221519-9cc526be4710
+	github.com/rubenvp8510/jaeger-storage-perf v0.0.0-20201026045336-fb1004a98fca
 	github.com/spf13/viper v1.7.1
 	github.com/uber/jaeger-lib v2.4.0+incompatible
 	go.uber.org/zap v1.16.0

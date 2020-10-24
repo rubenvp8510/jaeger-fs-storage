@@ -1,5 +1,5 @@
 name: "Performance tests"
-on: [push, pull_request]
+on: [pull_request]
 jobs:
   performance:
     runs-on: ubuntu-latest
